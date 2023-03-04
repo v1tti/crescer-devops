@@ -1,0 +1,51 @@
+version: "3"
+
+services:
+  postgres:
+    image: postgres
+    container_name: postgres
+    environment:
+      - POSTGRES_USER=bePepe
+      - POSTGRES_PASSWORD=bePepe
+      - POSTGRES_DB=bePepe
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./data/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "5433:5433"
+    networks:
+      - app
+
+    restart: always
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@cwi.com.br
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    ports:
+      - "8080:8080"
+  app:
+    container_name: tcc-container
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tcc-container
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5433/bePepe
+      - SPRING_DATASOURCE_USER=bePepe
+      - SPRING_DATASOURCE_PASSWORD=bePepe
+    ports:
+      - "8080:8080"
+    networks:
+      - app
+    depends_on:
+      - postgres
+
+volumes:
+  postgres-data:
+  pgadmin-data:
+networks:
+  app:
