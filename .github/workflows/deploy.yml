@@ -1,16 +1,104 @@
-name: Hello World Integração Contínua!
+name: Deploy to Azure Web App
 
-on: 
+on:
   push:
-    branches: ["main"]
+    branches: [ "main" ]
   pull_request:
-    branches: ["main"]
-  
+    branches: [ "main" ]
+
 jobs:
-  OlaMundo: 
+  build:
+    name: Compilação
     runs-on: ubuntu-latest
+
+    steps:
+    - name: Git Checkout
+      uses: actions/checkout@v3
+    - name: Configura JDK 11
+      uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: maven
+    - name: Compilação
+      run: mvn clean install -DskipTests
+      
+  code-quality:
+    name: Qualidade de Código
+    needs: build
+    runs-on: ubuntu-latest        
     
     steps:
-      - uses: actions/checkout@v3
-      - name: Diga
-        run: echo Hello-world!
+    - name: Git Checkout
+      uses: actions/checkout@v3
+    - name: Adiciona permissão para mvnw
+      run: chmod +x mvnw
+    - name: Análise SonarCloud
+      run: ./mvnw verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=lab-crescer-pipeline
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        
+  tests:
+    name: Testes automatizados
+    needs: code-quality
+    runs-on: ubuntu-latest    
+    
+    steps:
+    - name: Git Checkout
+      uses: actions/checkout@v3
+    - name: Configura JDK 11
+      uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: maven
+    - name: Testes Unitários
+      run: mvn -B test --file pom.xml
+      
+  push-image:
+    name: Enviando Imagem para o DockerHub
+    needs: tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Login DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        
+    - name: Criação e envio da Imagem
+      uses: docker/build-push-action@v4
+      with:
+#         context: .
+        file: ./Dockerfile
+        push: true
+        run: |
+          export DOCKER_BUILDKIT=0
+          export COMPOSE_DOCKER_CLI_BUILD=0
+        tags: |
+          gabrielvitti/javacrescer:latest
+  
+  deploy:
+    name: Publica Web App     
+    needs: push-image
+    runs-on: ubuntu-latest
+    steps:
+    - name: 'Login via Azure CLI'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+          
+    - name: 'Deploy to Azure Container Instances'
+      uses: 'azure/aci-deploy@v1'
+      with:
+        resource-group: RG-APPS-CRESCER
+        dns-name-label: labs-crescer-gabriel-vitti
+        image: gabrielvitti/javacrescer:latest
+        cpu: 1   #Optional
+        memory: 1  #Optional
+        registry-login-server: docker.io
+        registry-username: ${{ secrets.REGISTRY_USERNAME }}
+        registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+        name: labs-crescer-gabriel-vitti
+        location: 'east us'
